@@ -6,6 +6,8 @@ Created on Wed Mar  6 22:43:04 2019
 """
 import numpy as np
 
+import copy
+
 cross = 1
 circle = -1
 blank = 0
@@ -100,10 +102,7 @@ def forwardprop(x, a, params):
     
     return y, a
 
-board = newboard()
-x = board.reshape((nx, 1))
-a1 = np.zeros((nh, 1))
-a2 = np.zeros((nh, 1))
+
 
 params2 = initparams(layerdims)
 move1 = np.zeros(2, dtype='int')
@@ -111,9 +110,9 @@ move2 = np.zeros(2, dtype='int')
 
 
 numparams1 = 10
-params1s = [initparams(layerdims) for i in range(numparams1)]
-wins1 = np.zeros(numparams1, dtype='int')
+params1s = np.array([initparams(layerdims) for i in range(numparams1)])
 
+wins1 = np.zeros(numparams1, dtype='int')
 for ind, params1 in enumerate(params1s):
     board = newboard()
     x = board.reshape((nx, 1))
@@ -131,7 +130,7 @@ for ind, params1 in enumerate(params1s):
                 break
         if checkwin(board):
             #print('X wins')
-            wins1[ind] = 1
+            wins1[ind] = cross
             break
         
         
@@ -145,10 +144,21 @@ for ind, params1 in enumerate(params1s):
                 break
         if checkwin(board):
             #print('O wins')
-            wins1[ind] = -1
+            wins1[ind] = circle
             break
     if checkwin(board) == blank:
         #print('Draw')
         pass
 
 print(np.mean(wins1))
+
+
+winparams1s = params1s[wins1 == cross]
+
+for ind in np.nonzero(wins1 != cross)[0]:
+    params1s[ind] = copy.deepcopy(np.random.choice(winparams1s))
+
+
+
+
+
