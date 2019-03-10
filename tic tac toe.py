@@ -15,17 +15,17 @@ blank = 0
 boardshape = (3,3)
 
 def newboard():
-    return np.zeros(boardshape)
+    return np.zeros(boardshape, dtype='int')
 
 def checkwin(board):
     #check win for crosses and circles on board
     crosses = np.ones(boardshape) * (cross == board)
     circles = np.ones(boardshape) * (circle == board)
     if 3 in crosses.sum(axis=0) or 3 in crosses.sum(axis=1) or crosses.trace() == 3 or np.fliplr(crosses).trace() == 3:
-        return cross
+        return True
     if 3 in circles.sum(axis=0) or 3 in circles.sum(axis=1) or circles.trace() == 3 or np.fliplr(circles).trace() == 3:
-        return circle
-    return blank
+        return True
+    return False
 
 def checkfull(board):
     if blank in board:
@@ -34,17 +34,17 @@ def checkfull(board):
         return True
     
 def checkvalid(move, board):
-    if blank == board[move[0], move[1]]:
+    if blank == board[move]:
         return True
     else:
         return False
 
 def placeboard(move, player, board):
     if checkvalid(move, board):
-        board[move[0], move[1]] = player
+        board[move] = player
     else:
         print('placeboard: move invalid')
-    
+
 """
 board = newboard()
 print(board)
@@ -59,7 +59,7 @@ while not checkwin(board) and not checkfull(board):
 """
 
 nx = 9
-nh = 10
+nh = 100
 ny = 9
 layerdims = (nx, nh, ny)
 
@@ -83,8 +83,13 @@ def mutateparams(params, var = 1):
     params['ba'] += np.random.randn(*params['ba'].shape) * np.sqrt(var)
     params['by'] += np.random.randn(*params['by'].shape) * np.sqrt(var)
 
+def mutateparamss(paramss, var = 1):
+    for params in paramss:
+        mutateparams(params, var)
+
 def softmax(z):
-    exp = np.exp(z)
+    shiftz = z - np.max(z, axis=0) # For numerical stability
+    exp = np.exp(shiftz)
     return exp/(np.sum(exp, axis=0))
     
 def forwardprop(x, a, params):
@@ -104,61 +109,141 @@ def forwardprop(x, a, params):
 
 
 
-params2 = initparams(layerdims)
-move1 = np.zeros(2, dtype='int')
-move2 = np.zeros(2, dtype='int')
-
-
-numparams1 = 10
-params1s = np.array([initparams(layerdims) for i in range(numparams1)])
-
-wins1 = np.zeros(numparams1, dtype='int')
-for ind, params1 in enumerate(params1s):
+def playround(paramscro, paramscir):
+    """ 
+    Two bots play against each other and see who wins on one round
+    if a bot played an invalid move, it loses
+    input: params of two bots, paramscro will move first
+    output: integer, the winner
+    """
+    
     board = newboard()
     x = board.reshape((nx, 1))
     a1 = np.zeros((nh, 1))
     a2 = np.zeros((nh, 1))
     
-    while not checkfull(board):
-        y1, a1 = forwardprop(x, a1, params1)
-        arg1 = y1.ravel().argsort()[::-1]
-        for i in range(9):
-            move1[0] = arg1[i] // 3
-            move1[1] = arg1[i] % 3
-            if checkvalid(move1, board):
-                placeboard(move1 , cross, board)
-                break
+    move1 = np.zeros(2, dtype='int')
+    move2 = np.zeros(2, dtype='int')
+    
+    while True:
+        y1, a1 = forwardprop(x, a1, paramscro)
+        argmax1 = y1.argmax()
+        move1 = (argmax1 // 3, argmax1 % 3)
+        if checkvalid(move1, board):
+            placeboard(move1, cross, board)
+        else:
+            win = circle
+            break
         if checkwin(board):
-            #print('X wins')
-            wins1[ind] = cross
+            win = cross
             break
         
-        
-        y2, a2 = forwardprop(x, a2, params2)
-        arg2 = y2.ravel().argsort()[::-1]
-        for i in range(9):
-            move2[0] = arg2[i] // 3
-            move2[1] = arg2[i] % 3
-            if checkvalid(move2, board):
-                placeboard(move2 , circle, board)
-                break
-        if checkwin(board):
-            #print('O wins')
-            wins1[ind] = circle
+        if checkfull(board):
+            win = blank
             break
-    if checkwin(board) == blank:
-        #print('Draw')
-        pass
+        
+        y2, a2 = forwardprop(x, a2, paramscir)
+        argmax2 = y2.argmax()
+        move2 = (argmax2 // 3, argmax2 % 3)
+        if checkvalid(move2, board):
+            placeboard(move2 , circle, board)
+        else:
+            win = cross
+            break
+        if checkwin(board):
+            win = circle
+            break
+        
+        if checkfull(board):
+            win = blank
+            print('playround: Impossible to activate this')
+            break
+    
+    return win
 
-print(np.mean(wins1))
 
+def playrounds(paramss, paramsfixed, whoparamss):
+    """ 
+    Two bots play against each other on multiple rounds.
+    multiple params are passed for one player and one fixed params are passed for the other player
+    input:
+        paramss: consists of multiple params for a single bot
+        paramsfixed: single params for the other bot
+        whoparamss: signifies which player the paramss belong to
+    output: numpy array of winners on every round
+    """
+    wins = []
+    if whoparamss == cross:
+        for params in paramss:
+            wins.append(playround(params, paramsfixed))
+    elif whoparamss == circle:
+        for params in paramss:
+            wins.append(playround(paramsfixed, params))
+    else:
+        print('playrounds: Error on who the params belong')
+        
+    return np.array(wins, dtype='int')
+    
 
-winparams1s = params1s[wins1 == cross]
+# Create new bots params
+numparamscros = 100
+numparamscirs = 100
+paramscros = np.array([initparams(layerdims) for i in range(numparamscros)])
+paramscirs = np.array([initparams(layerdims) for i in range(numparamscirs)])
 
-for ind in np.nonzero(wins1 != cross)[0]:
-    params1s[ind] = copy.deepcopy(np.random.choice(winparams1s))
-
-
-
-
-
+for j in range(50):
+    winss = []
+    losess = []
+    
+    for i in range(100):
+        # Play rounds
+        paramscir = np.random.choice(paramscirs)
+        wins = playrounds(paramscros, paramscir, cross)
+        
+        # Kill losers and replicate winners, keep drawers. Replicated winners are then mutated.
+        winners = (wins == cross)
+        losers = (wins == circle)
+        print('winners:', np.mean(winners), 'losers:', np.mean(losers))
+        if np.sum(losers) != 0:
+            if np.sum(winners) != 0:
+                winparamscros = paramscros[winners]
+                for loser in np.nonzero(losers)[0]:
+                    paramscros[loser] = copy.deepcopy(np.random.choice(winparamscros))
+                    mutateparams(paramscros[loser])
+            else:
+                mutateparamss(paramscros)
+        
+        winss.append(np.mean(winners))
+        losess.append(np.mean(losers))
+    
+    print(np.mean(winss), np.mean(losess))
+    print('###########################################################')
+    
+    
+    
+    winss = []
+    losess = []
+    
+    for i in range(100):
+        # Play rounds
+        paramscro = np.random.choice(paramscros)
+        wins = playrounds(paramscirs, paramscro, circle)
+        
+        # Kill losers and replicate winners, keep drawers. Replicated winners are then mutated.
+        winners = (wins == circle)
+        losers = (wins == cross)
+        print('winners:', np.mean(winners), 'losers:', np.mean(losers))
+    
+        if np.sum(losers) != 0:
+            if np.sum(winners) != 0:
+                winparamscirs = paramscirs[winners]
+                for loser in np.nonzero(losers)[0]:
+                    paramscirs[loser] = copy.deepcopy(np.random.choice(winparamscirs))
+                    mutateparams(paramscirs[loser])
+            else:
+                mutateparamss(paramscirs)
+        
+        winss.append(np.mean(winners))
+        losess.append(np.mean(losers))
+    
+    print(np.mean(winss), np.mean(losess))
