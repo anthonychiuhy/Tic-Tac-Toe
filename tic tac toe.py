@@ -18,6 +18,17 @@ boardshape = (3,3)
 def newboard():
     return np.zeros(boardshape, dtype='int')
 
+def randomboard():
+    moves = np.random.randint(9)
+    board = newboard()
+    for i in range(moves):
+        player = np.random.choice([cross, circle])
+        move = playdummystep(board)
+        placeboard(move, board, player)
+    
+    return board
+    
+
 def checkwin(board):
     #check win for crosses and circles on board
     crosses = np.ones(boardshape) * (cross == board)
@@ -200,6 +211,22 @@ def playround(paramscro, paramscir):
     
     return win
 
+def playbabyround(params):
+    """
+    Bot plays a baby round, all it has to do is to pick an arbitrary empty slot in a random board
+    input:
+        params: params of the bot
+    output:
+        Boolean, True if it picked correctly and False otherwise
+    """
+    board = randomboard()
+    
+    move = playstep(params, board)
+    isvalid = checkvalid(move, board)
+    
+    return isvalid
+    
+
 def playdummyround(params, whoparams):
     """ 
     One bot is played with a dummy bot whose moves are completely random
@@ -291,6 +318,13 @@ def playrounds(paramss, paramsfixed, whoparamss):
         
     return np.array(wins, dtype='int')
 
+def playbabyrounds(paramss):
+    wins = []
+    for params in paramss:
+        wins.append(playbabyround(params))
+        
+    return np.array(wins, dtype='bool')
+
 def playdummyrounds(paramss, whoparamss):
     wins = []
     for params in paramss:
@@ -299,54 +333,17 @@ def playdummyrounds(paramss, whoparamss):
     return np.array(wins, dtype='int')
     
 # Create new bots params
-numparamscros = 500
-numparamscirs = 500
+numparamscros = 100
+numparamscirs = 100
 paramscros = np.array([initparams(layerdims) for i in range(numparamscros)])
 paramscirs = np.array([initparams(layerdims) for i in range(numparamscirs)])
 
-"""
-# Play rounds for cross
-paramscir = np.random.choice(paramscirs)
-wins = playrounds(paramscros, paramscir, cross)
 
-# Kill losers and replicate winners, keep drawers. Replicated winners are then mutated.
-winners = (wins == cross)
-losers = (wins == circle)
-print('cross: winners:', np.mean(winners), 'losers:', np.mean(losers))
-if np.sum(losers) != 0:
-    if np.sum(winners) != 0:
-        winparamscros = paramscros[winners]
-        for loser in np.nonzero(losers)[0]:
-            paramscros[loser] = copy.deepcopy(np.random.choice(winparamscros))
-            mutateparams(paramscros[loser], var=0.01)
-    else:
-        mutateparamss(paramscros, var=0.01)
-
-# Play rounds for circle
-paramscro = np.random.choice(paramscros)
-wins = playrounds(paramscirs, paramscro, circle)
-
-# Kill losers and replicate winners, keep drawers. Replicated winners are then mutated.
-winners = (wins == circle)
-losers = (wins == cross)
-print('circle: winners:', np.mean(winners), 'losers:', np.mean(losers))
-
-if np.sum(losers) != 0:
-    if np.sum(winners) != 0:
-        winparamscirs = paramscirs[winners]
-        for loser in np.nonzero(losers)[0]:
-            paramscirs[loser] = copy.deepcopy(np.random.choice(winparamscirs))
-            mutateparams(paramscirs[loser], var=0.01)
-    else:
-        mutateparamss(paramscirs, var=0.01)
-"""
 winnerss = []
-for i in range(5000):
-    wins = playdummyrounds(paramscros, cross)
-    winners = (wins == cross)
-    losers = (wins == circle)
+for i in range(100):
+    winners = playbabyrounds(paramscros)
     winnerss.append(np.mean(winners))
-    print('winners:', np.mean(winners), 'losers:', np.mean(losers))
+    print('winners:', np.mean(winners), 'losers:', ` - np.mean(winners))
     evolveparamss(paramscros, cross, wins, var=0.1)
 
 plt.plot(winnerss)
