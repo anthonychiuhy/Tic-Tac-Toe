@@ -5,6 +5,7 @@ Created on Wed Mar  6 22:43:04 2019
 @author: HOME1
 """
 import numpy as np
+import matplotlib.pyplot as plt
 
 import copy
 
@@ -39,7 +40,7 @@ def checkvalid(move, board):
     else:
         return False
 
-def placeboard(move, player, board):
+def placeboard(move, board, player):
     if checkvalid(move, board):
         board[move] = player
     else:
@@ -59,78 +60,117 @@ while not checkwin(board) and not checkfull(board):
 """
 
 nx = 9
-nh = 100
+nh = 50
 ny = 9
 layerdims = (nx, nh, ny)
 
 
-def initparams(layerdims, var = 1):
+def initparams(layerdims, var=1):
     params = {}
-    params['Wax'] = np.random.randn(layerdims[1], layerdims[0]) * np.sqrt(var)
-    params['Waa'] = np.random.randn(layerdims[1], layerdims[1]) * np.sqrt(var)
-    params['Wy'] = np.random.randn(layerdims[2], layerdims[1]) * np.sqrt(var)
+    params['W1'] = np.random.randn(layerdims[1], layerdims[0]) * np.sqrt(var)
+    params['W2'] = np.random.randn(layerdims[2], layerdims[1]) * np.sqrt(var)
     
-    params['ba'] = np.random.randn(layerdims[1], 1) * np.sqrt(var)
-    params['by'] = np.random.randn(layerdims[2], 1) * np.sqrt(var)
+    params['b1'] = np.random.randn(layerdims[1], 1) * np.sqrt(var)
+    params['b2'] = np.random.randn(layerdims[2], 1) * np.sqrt(var)
     
     return params
 
-def mutateparams(params, var = 1):
-    params['Wax'] += np.random.randn(*params['Wax'].shape) * np.sqrt(var)
-    params['Waa'] += np.random.randn(*params['Waa'].shape) * np.sqrt(var)
-    params['Wy'] += np.random.randn(*params['Wy'].shape) * np.sqrt(var)
+def mutateparams(params, var=1):
+    params['W1'] += np.random.randn(*params['W1'].shape) * np.sqrt(var)
+    params['W2'] += np.random.randn(*params['W2'].shape) * np.sqrt(var)
     
-    params['ba'] += np.random.randn(*params['ba'].shape) * np.sqrt(var)
-    params['by'] += np.random.randn(*params['by'].shape) * np.sqrt(var)
+    params['b1'] += np.random.randn(*params['b1'].shape) * np.sqrt(var)
+    params['b2'] += np.random.randn(*params['b2'].shape) * np.sqrt(var)
 
-def mutateparamss(paramss, var = 1):
+def mutateparamss(paramss, var=1):
     for params in paramss:
         mutateparams(params, var)
 
+def evolveparamss(paramss, whoparamss, wins, var=1):
+    """
+    One step of evolution on paramss
+    Losers are killed and winners are replicated. Drawers are kept.
+    Replicated winners are then mutated.
+    """
+    if whoparamss == cross:
+        winners = (wins == cross)
+        losers = (wins == circle)
+    elif whoparamss == circle:
+        winners = (wins == circle)
+        losers = (wins == cross)
+
+    if np.sum(losers) != 0:
+        if np.sum(winners) != 0:
+            winparamss = paramss[winners]
+            for loser in np.nonzero(losers)[0]:
+                paramss[loser] = copy.deepcopy(np.random.choice(winparamss))
+                mutateparams(paramss[loser], var)
+        else:
+            mutateparamss(paramss, var)
+    
 def softmax(z):
     shiftz = z - np.max(z, axis=0) # For numerical stability
     exp = np.exp(shiftz)
     return exp/(np.sum(exp, axis=0))
-    
-def forwardprop(x, a, params):
-    Wax = params['Wax']
-    Waa = params['Waa']
-    Wy = params['Wy']
-    ba = params['ba']
-    by = params['by']
-    
-    za = Wax.dot(x) + Waa.dot(a) + ba
-    a = np.tanh(za)
-    
-    zy = Wy.dot(a) + by
-    y = softmax(zy)
-    
-    return y, a
 
+def forwardprop(x, params):
+    W1 = params['W1']
+    W2 = params['W2']
+    b1 = params['b1']
+    b2 = params['b2']
+    
+    z1 = W1.dot(x) + b1
+    a1 = np.tanh(z1)
+    
+    z2 = W2.dot(a1) + b2
+    y = softmax(z2)
+    
+    return y
 
+def playstep(params, board):
+    """ 
+    Play one move for a bot
+    input:
+        params: params of the bot
+        board: board configuration
+    output:
+        tuple, the desired move position on board for the bot
+    """
+    x = board.reshape((nx, 1))
+    y = forwardprop(x, params)
+    argmax = y.argmax()
+    return (argmax // 3, argmax % 3)
+
+def playdummystep(board):
+    """
+    Given the configuration of the board, play a valid move
+    Input:
+        board: board configuration
+    Output:
+        tuple of integers, the position of the move
+    """
+    while True:
+        move = (np.random.randint(3), np.random.randint(3))
+        if checkvalid(move, board):
+            return move
 
 def playround(paramscro, paramscir):
     """ 
     Two bots play against each other and see who wins on one round
     if a bot played an invalid move, it loses
-    input: params of two bots, paramscro will move first
-    output: integer, the winner
+    input: 
+        paramscro: params for cross
+        paramscir: params for circle
+    output:
+        integer, the winner
     """
     
     board = newboard()
-    x = board.reshape((nx, 1))
-    a1 = np.zeros((nh, 1))
-    a2 = np.zeros((nh, 1))
-    
-    move1 = np.zeros(2, dtype='int')
-    move2 = np.zeros(2, dtype='int')
-    
+
     while True:
-        y1, a1 = forwardprop(x, a1, paramscro)
-        argmax1 = y1.argmax()
-        move1 = (argmax1 // 3, argmax1 % 3)
-        if checkvalid(move1, board):
-            placeboard(move1, cross, board)
+        move = playstep(paramscro, board)
+        if checkvalid(move, board):
+            placeboard(move, board, cross)
         else:
             win = circle
             break
@@ -140,13 +180,12 @@ def playround(paramscro, paramscir):
         
         if checkfull(board):
             win = blank
+            print('draw')
             break
         
-        y2, a2 = forwardprop(x, a2, paramscir)
-        argmax2 = y2.argmax()
-        move2 = (argmax2 // 3, argmax2 % 3)
-        if checkvalid(move2, board):
-            placeboard(move2 , circle, board)
+        move = playstep(paramscir, board)
+        if checkvalid(move, board):
+            placeboard(move, board, circle)
         else:
             win = cross
             break
@@ -161,6 +200,74 @@ def playround(paramscro, paramscir):
     
     return win
 
+def playdummyround(params, whoparams):
+    """ 
+    One bot is played with a dummy bot whose moves are completely random
+    They play one round and see who wins
+    The dummy bot will not play an invalid move
+    If the deterministic bot played an invalid move, it loses
+    input:
+        params: params of the bot
+        whoparams: which player does the params represent
+    output: integer, the winner
+    """
+    board = newboard()
+    
+    if whoparams == cross:
+        while True:
+            # Cross turn
+            move = playstep(params, board)
+            if checkvalid(move, board):
+                placeboard(move, board, cross)
+            else:
+                win = circle
+                break
+            if checkwin(board):
+                win = cross
+                break
+            
+            if checkfull(board):
+                win = blank
+                print('draw')
+                break
+            
+            # Circle turn
+            move = playdummystep(board)
+            placeboard(move, board, circle)
+            if checkwin(board):
+                win = circle
+                break
+        
+    elif whoparams == circle:
+        while True:
+            # Cross turn
+            move = playdummystep(board)
+            placeboard(move, board, cross)
+            if checkwin(board):
+                win = cross
+                break
+            
+            if checkfull(board):
+                win = blank
+                print('draw')
+                break
+            
+            # Circle turn
+            move = playstep(params, board)
+            if checkvalid(move, board):
+                placeboard(move, board, circle)
+            else:
+                win = cross
+                break
+            if checkwin(board):
+                win = circle
+                break
+            
+    else:
+        print('playdummyround: Error on who the params belong')
+        win = None
+    
+    return win
 
 def playrounds(paramss, paramsfixed, whoparamss):
     """ 
@@ -183,67 +290,63 @@ def playrounds(paramss, paramsfixed, whoparamss):
         print('playrounds: Error on who the params belong')
         
     return np.array(wins, dtype='int')
-    
 
+def playdummyrounds(paramss, whoparamss):
+    wins = []
+    for params in paramss:
+        wins.append(playdummyround(params, whoparamss))
+        
+    return np.array(wins, dtype='int')
+    
 # Create new bots params
-numparamscros = 100
-numparamscirs = 100
+numparamscros = 500
+numparamscirs = 500
 paramscros = np.array([initparams(layerdims) for i in range(numparamscros)])
 paramscirs = np.array([initparams(layerdims) for i in range(numparamscirs)])
 
-for j in range(50):
-    winss = []
-    losess = []
-    
-    for i in range(100):
-        # Play rounds
-        paramscir = np.random.choice(paramscirs)
-        wins = playrounds(paramscros, paramscir, cross)
-        
-        # Kill losers and replicate winners, keep drawers. Replicated winners are then mutated.
-        winners = (wins == cross)
-        losers = (wins == circle)
-        print('winners:', np.mean(winners), 'losers:', np.mean(losers))
-        if np.sum(losers) != 0:
-            if np.sum(winners) != 0:
-                winparamscros = paramscros[winners]
-                for loser in np.nonzero(losers)[0]:
-                    paramscros[loser] = copy.deepcopy(np.random.choice(winparamscros))
-                    mutateparams(paramscros[loser])
-            else:
-                mutateparamss(paramscros)
-        
-        winss.append(np.mean(winners))
-        losess.append(np.mean(losers))
-    
-    print(np.mean(winss), np.mean(losess))
-    print('###########################################################')
-    
-    
-    
-    winss = []
-    losess = []
-    
-    for i in range(100):
-        # Play rounds
-        paramscro = np.random.choice(paramscros)
-        wins = playrounds(paramscirs, paramscro, circle)
-        
-        # Kill losers and replicate winners, keep drawers. Replicated winners are then mutated.
-        winners = (wins == circle)
-        losers = (wins == cross)
-        print('winners:', np.mean(winners), 'losers:', np.mean(losers))
-    
-        if np.sum(losers) != 0:
-            if np.sum(winners) != 0:
-                winparamscirs = paramscirs[winners]
-                for loser in np.nonzero(losers)[0]:
-                    paramscirs[loser] = copy.deepcopy(np.random.choice(winparamscirs))
-                    mutateparams(paramscirs[loser])
-            else:
-                mutateparamss(paramscirs)
-        
-        winss.append(np.mean(winners))
-        losess.append(np.mean(losers))
-    
-    print(np.mean(winss), np.mean(losess))
+"""
+# Play rounds for cross
+paramscir = np.random.choice(paramscirs)
+wins = playrounds(paramscros, paramscir, cross)
+
+# Kill losers and replicate winners, keep drawers. Replicated winners are then mutated.
+winners = (wins == cross)
+losers = (wins == circle)
+print('cross: winners:', np.mean(winners), 'losers:', np.mean(losers))
+if np.sum(losers) != 0:
+    if np.sum(winners) != 0:
+        winparamscros = paramscros[winners]
+        for loser in np.nonzero(losers)[0]:
+            paramscros[loser] = copy.deepcopy(np.random.choice(winparamscros))
+            mutateparams(paramscros[loser], var=0.01)
+    else:
+        mutateparamss(paramscros, var=0.01)
+
+# Play rounds for circle
+paramscro = np.random.choice(paramscros)
+wins = playrounds(paramscirs, paramscro, circle)
+
+# Kill losers and replicate winners, keep drawers. Replicated winners are then mutated.
+winners = (wins == circle)
+losers = (wins == cross)
+print('circle: winners:', np.mean(winners), 'losers:', np.mean(losers))
+
+if np.sum(losers) != 0:
+    if np.sum(winners) != 0:
+        winparamscirs = paramscirs[winners]
+        for loser in np.nonzero(losers)[0]:
+            paramscirs[loser] = copy.deepcopy(np.random.choice(winparamscirs))
+            mutateparams(paramscirs[loser], var=0.01)
+    else:
+        mutateparamss(paramscirs, var=0.01)
+"""
+winnerss = []
+for i in range(5000):
+    wins = playdummyrounds(paramscros, cross)
+    winners = (wins == cross)
+    losers = (wins == circle)
+    winnerss.append(np.mean(winners))
+    print('winners:', np.mean(winners), 'losers:', np.mean(losers))
+    evolveparamss(paramscros, cross, wins, var=0.1)
+
+plt.plot(winnerss)
